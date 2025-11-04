@@ -42,7 +42,7 @@ class MiniPlaces(Dataset):
                     label = int(line[1])
                 self.labels.append(label)
                 if split == 'train':
-                    text_label = line[0].split(os.sep)[2]
+                    text_label = line[0].split('/')[2] # Windows uses backslash '\', but dataset file uses forward slash '/'
                     self.label_dict[label] = text_label
                 
 
@@ -75,13 +75,47 @@ class MiniPlaces(Dataset):
 
 class MyConv(nn.Module):
     def __init__(self, num_classes=100):
-
         super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
 
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
 
-    def forward(self, x, return_intermediate=False):
-        return torch.tensor(0)
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
 
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
+        )
+
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)), 
+            nn.Flatten(),
+            nn.Dropout(0.5), 
+            nn.Linear(256, num_classes)
+        )
+
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(256 * 4 * 4, 512),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.5),
+        #     nn.Linear(512, num_classes)
+        # )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
     
 def evaluate(model, test_loader, criterion, device):
     """
@@ -118,7 +152,6 @@ def evaluate(model, test_loader, criterion, device):
             _, predictions = torch.max(logits, dim=1)
             num_correct += (predictions == labels).sum().item()
             num_samples += len(inputs)
-            
 
     # Evaluate the model on the validation set
     avg_loss = total_loss / len(test_loader)
@@ -126,8 +159,7 @@ def evaluate(model, test_loader, criterion, device):
     
     return avg_loss, accuracy
 
-def train(model, train_loader, val_loader, optimizer, criterion, device,
-          num_epochs):
+def train(model, train_loader, val_loader, optimizer, criterion, device, num_epochs, scheduler):
     """
     Train the CNN classifer on the training set and evaluate it on the validation set every epoch.
 
@@ -157,16 +189,23 @@ def train(model, train_loader, val_loader, optimizer, criterion, device,
 
                 # Compute the logits and loss
                 logits = model(inputs)
-                loss = torch.tensor(0)
+                loss = criterion(logits, labels)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
                 # Update the progress bar
                 pbar.update(1)
                 pbar.set_postfix(loss=loss.item())
+            
+            train_loss, train_acc = evaluate(model, train_loader, criterion, device)
+            print('\n'+f'Training set: Average loss = {train_loss:.4f}, Accuracy = {train_acc:.4f}')
 
             avg_loss, accuracy = evaluate(model, val_loader, criterion, device)
-            print(
-                f'Validation set: Average loss = {avg_loss:.4f}, Accuracy = {accuracy:.4f}'
-                )
+            print(f'Validation set: Average loss = {avg_loss:.4f}, Accuracy = {accuracy:.4f}')
+
+            scheduler.step()
 
 def test(model, test_loader, device):
     """
@@ -190,16 +229,12 @@ def test(model, test_loader, device):
         for inputs, labels in test_loader:
             # Move inputs and labels to device
             inputs = inputs.to(device)
-
             logits = model(inputs)
-
             _, predictions = torch.max(logits, dim=1)
             preds = list(zip(labels, predictions.tolist()))
             all_preds.extend(preds)
     return all_preds
             
-            
-
     # Evaluate the model on the validation set
     avg_loss = total_loss / len(test_loader)
     accuracy = num_correct / num_samples
@@ -220,13 +255,8 @@ def main(args):
     data_root = 'data'
     
     # Create MiniPlaces dataset object
-    miniplaces_train = MiniPlaces(data_root,
-                                  split='train',
-                                  transform=data_transform)
-    miniplaces_val = MiniPlaces(data_root,
-                                split='val',
-                                transform=data_transform,
-                                label_dict=miniplaces_train.label_dict)
+    miniplaces_train = MiniPlaces(data_root, split='train', transform=data_transform)
+    miniplaces_val = MiniPlaces(data_root, split='val', transform=data_transform, label_dict=miniplaces_train.label_dict)
 
     # Create the dataloaders
     
@@ -235,40 +265,22 @@ def main(args):
     num_workers = 2
 
     # Create DataLoader for training and validation sets
-    train_loader = DataLoader(miniplaces_train,
-                              batch_size=batch_size,
-                              num_workers=num_workers,
-                              shuffle=True)
-    val_loader = DataLoader(miniplaces_val,
-                            batch_size=batch_size,
-                            num_workers=num_workers,
-                            shuffle=False)
+    train_loader = DataLoader(miniplaces_train, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+    val_loader = DataLoader(miniplaces_val, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     model = MyConv(num_classes=len(miniplaces_train.label_dict))
-                   
-
-    optimizer = None 
-
-    criterion = None
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0005)
+    criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     if not args.test:
-
-        train(model, train_loader, val_loader, optimizer, criterion,
-              device, num_epochs=5)
-
-        torch.save({'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict':optimizer.state_dict()}, 'model.ckpt')
-
+        train(model, train_loader, val_loader, optimizer, criterion, device, num_epochs=50, scheduler=scheduler)
+        torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict':optimizer.state_dict()}, 'model.ckpt')
     else:
-        miniplaces_test = MiniPlaces(data_root,
-                                     split='test',
-                                     transform=data_transform)
-        test_loader = DataLoader(miniplaces_test,
-                                batch_size=batch_size,
-                                num_workers=num_workers,
-                                shuffle=False)        
+        miniplaces_test = MiniPlaces(data_root, split='test', transform=data_transform)
+        test_loader = DataLoader(miniplaces_test, batch_size=batch_size, num_workers=num_workers, shuffle=False)        
         checkpoint = torch.load(args.checkpoint, weights_only=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         preds = test(model, test_loader, device)
@@ -280,7 +292,6 @@ def write_predictions(preds, filename):
         for im, pred in preds:
             writer.writerow((im, pred))
     
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true')
