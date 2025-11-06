@@ -236,22 +236,6 @@ def main(args):
         transforms.ToTensor(),
         transforms.Normalize(image_net_mean, image_net_std),
     ])
-
-    # data_transform = transforms.Compose([
-    #     transforms.Resize(256),
-    #     transforms.RandomResizedCrop(224, scale=(0.5, 1.0)),
-    #     transforms.RandomHorizontalFlip(),
-    #     transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(image_net_mean, image_net_std),
-    #     transforms.RandomErasing(p=0.1)
-    # ])
-    # eval_transform = transforms.Compose([
-    #     transforms.Resize(256),
-    #     transforms.CenterCrop(224),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(image_net_mean, image_net_std)
-    # ])
     
     data_root = 'data'
     
@@ -269,9 +253,7 @@ def main(args):
     model = MyConv(num_classes=len(miniplaces_train.label_dict))
     
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0005)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=0.0005, nesterov=True)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     if not args.test:
