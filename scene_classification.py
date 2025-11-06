@@ -236,22 +236,6 @@ def main(args):
         transforms.ToTensor(),
         transforms.Normalize(image_net_mean, image_net_std),
     ])
-
-    # data_transform = transforms.Compose([
-    #     transforms.Resize(256),
-    #     transforms.RandomResizedCrop(224, scale=(0.5, 1.0)),
-    #     transforms.RandomHorizontalFlip(),
-    #     transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(image_net_mean, image_net_std),
-    #     transforms.RandomErasing(p=0.1)
-    # ])
-    # eval_transform = transforms.Compose([
-    #     transforms.Resize(256),
-    #     transforms.CenterCrop(224),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(image_net_mean, image_net_std)
-    # ])
     
     data_root = 'data'
     
