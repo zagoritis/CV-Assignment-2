@@ -279,4 +279,3 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint', default='model.ckpt')
     args = parser.parse_args()
     main(args)
-    
